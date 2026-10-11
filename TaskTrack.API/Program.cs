@@ -55,7 +55,7 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
     {
-        policy.WithOrigins("http://localhost:3000", "https://prn232-as01.vercel.app")
+        policy.WithOrigins(builder.Configuration["FRONTEND_URL"] ?? "http://localhost:3000")
               .AllowAnyHeader()
               .AllowAnyMethod();
     });
