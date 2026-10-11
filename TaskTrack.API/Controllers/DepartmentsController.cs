@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using TaskTrack.Service.DTOs;
 using TaskTrack.Service.Interfaces;
 using TaskTrack.Service.Results;
@@ -48,6 +49,7 @@ public class DepartmentsController : ControllerBase
         return Ok(departments);
     }
 
+    [Authorize(Roles = "0,1")]
     [HttpPost]
     public async Task<ActionResult<DepartmentDetailDto>> Create(
     [FromBody] CreateDepartmentDto input)
@@ -60,6 +62,7 @@ public class DepartmentsController : ControllerBase
             created);
     }
 
+    [Authorize(Roles = "0,1")]
     [HttpPut("{id:int}")]
     public async Task<IActionResult> Update(
     int id, [FromBody] UpdateDepartmentDto input)
@@ -72,6 +75,7 @@ public class DepartmentsController : ControllerBase
         return NoContent();
     }
 
+    [Authorize(Roles = "0,1")]
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> Delete(int id)
     {
