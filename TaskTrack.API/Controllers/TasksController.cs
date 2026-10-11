@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using TaskTrack.Service.DTOs;
 using TaskTrack.Service.Interfaces;
 
@@ -70,10 +71,16 @@ public class TasksController : ControllerBase
         return Ok(tasks);
     }
 
+    [Authorize(Roles = "0,1")]
     [HttpPost]
     public async Task<ActionResult<TaskDetailDto>> Create(
     [FromBody] CreateTaskDto input)
     {
+        if (!int.TryParse(User.FindFirst("AccountID")?.Value,
+        out var createdById) || createdById <= 0)
+        {
+            return Unauthorized();
+        }
         if (input.ProjectId.HasValue &&
             !await _service.ProjectExistsAsync(input.ProjectId.Value))
         {
@@ -90,13 +97,14 @@ public class TasksController : ControllerBase
         if (!ModelState.IsValid)
             return ValidationProblem(ModelState);
 
-        var created = await _service.CreateAsync(input);
+        var created = await _service.CreateAsync(input, createdById);
         return CreatedAtAction(
             nameof(GetById),
             new { id = created.TaskId },
             created);
     }
 
+    [Authorize(Roles = "0,1")]
     [HttpPut("{id:int}")]
     public async Task<IActionResult> Update(
     int id, [FromBody] UpdateTaskDto input)
@@ -125,6 +133,7 @@ public class TasksController : ControllerBase
         return NoContent();
     }
 
+    [Authorize(Roles = "0,1")]
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> Delete(int id)
     {

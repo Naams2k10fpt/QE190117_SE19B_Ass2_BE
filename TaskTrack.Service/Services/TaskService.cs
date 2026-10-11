@@ -107,7 +107,7 @@ public class TaskService : ITaskService
         return _repository.TagsExistAsync(tagIds);
     }
 
-    public async Task<TaskDetailDto> CreateAsync(CreateTaskDto input)
+    public async Task<TaskDetailDto> CreateAsync(CreateTaskDto input, int createdById)
     {
         var task = new TaskTrack.Repo.Models.Task
         {
@@ -117,6 +117,7 @@ public class TaskService : ITaskService
             Priority = input.Priority!.Value,
             DueDate = input.DueDate,
             ProjectId = input.ProjectId!.Value,
+            CreatedById = createdById,
             IsActive = true
         };
 
