@@ -2,6 +2,7 @@
 using TaskTrack.Service.DTOs;
 using TaskTrack.Service.Interfaces;
 using TaskTrack.Service.Results;
+using Microsoft.AspNetCore.Authorization;
 
 namespace TaskTrack.API.Controllers;
 
@@ -22,6 +23,8 @@ public class TagsController : ControllerBase
         var tags = await _service.GetAllAsync();
         return Ok(tags);
     }
+
+    [Authorize(Roles = "0,1")]
     [HttpPost]
     public async Task<ActionResult<TaskTagDto>> Create(
     [FromBody] CreateTagDto input)
@@ -37,6 +40,7 @@ public class TagsController : ControllerBase
         return StatusCode(201, created);
     }
 
+    [Authorize(Roles = "0,1")]
     [HttpPut("{id:int}")]
     public async Task<IActionResult> Update(
     int id, [FromBody] CreateTagDto input)
@@ -56,6 +60,7 @@ public class TagsController : ControllerBase
         return NoContent();
     }
 
+    [Authorize(Roles = "0,1")]
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> Delete(int id)
     {
