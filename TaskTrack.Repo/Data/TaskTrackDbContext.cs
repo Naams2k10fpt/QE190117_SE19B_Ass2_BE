@@ -20,6 +20,10 @@ public partial class TaskTrackDbContext : DbContext
 
     public virtual DbSet<Task> Tasks { get; set; }
 
+    public virtual DbSet<SystemAccount> SystemAccounts { get; set; }
+
+    public virtual DbSet<RefreshToken> RefreshTokens { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Department>(entity =>
@@ -84,6 +88,14 @@ public partial class TaskTrackDbContext : DbContext
             entity.Property(e => e.ProjectId).HasColumnName("ProjectID");
             entity.Property(e => e.Status).HasDefaultValue((short)0);
             entity.Property(e => e.Title).HasMaxLength(300);
+            entity.Property(e => e.CreatedById).HasColumnName("CreatedByID");
+
+            entity.HasIndex(e => e.CreatedById, "IX_Task_CreatedByID");
+
+            entity.HasOne(e => e.CreatedBy).WithMany()
+                .HasForeignKey(e => e.CreatedById)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("FK_Task_SystemAccount");
 
             entity.HasOne(d => d.Project).WithMany(p => p.Tasks)
                 .HasForeignKey(d => d.ProjectId)
@@ -110,6 +122,54 @@ public partial class TaskTrackDbContext : DbContext
                     });
         });
 
+        modelBuilder.Entity<SystemAccount>(entity =>
+        {
+            entity.HasKey(e => e.AccountId).HasName("SystemAccount_pkey");
+
+            entity.ToTable("SystemAccount");
+
+            entity.HasIndex(e => e.Email, "SystemAccount_Email_key").IsUnique();
+
+            entity.Property(e => e.AccountId).HasColumnName("AccountID");
+            entity.Property(e => e.FullName).HasMaxLength(100);
+            entity.Property(e => e.Email).HasMaxLength(255);
+            entity.Property(e => e.Role).HasDefaultValue((short)0);
+            entity.Property(e => e.CreatedDate)
+                .HasDefaultValueSql("CURRENT_TIMESTAMP")
+                .HasColumnType("timestamp with time zone");
+        });
+
+        modelBuilder.Entity<RefreshToken>(entity =>
+        {
+            entity.HasKey(e => e.RefreshTokenId)
+                .HasName("RefreshToken_pkey");
+
+            entity.ToTable("RefreshToken");
+
+            entity.HasIndex(e => e.TokenHash, "RefreshToken_TokenHash_key")
+                .IsUnique();
+            entity.HasIndex(e => e.AccountId, "IX_RefreshToken_AccountID");
+            entity.HasIndex(e => e.SessionId, "IX_RefreshToken_SessionID");
+
+            entity.Property(e => e.RefreshTokenId)
+                .HasColumnName("RefreshTokenID");
+            entity.Property(e => e.AccountId).HasColumnName("AccountID");
+            entity.Property(e => e.SessionId).HasColumnName("SessionID");
+            entity.Property(e => e.TokenHash).HasMaxLength(64);
+
+            entity.Property(e => e.CreatedDate)
+                .HasDefaultValueSql("CURRENT_TIMESTAMP")
+                .HasColumnType("timestamp with time zone");
+            entity.Property(e => e.ExpiresDate)
+                .HasColumnType("timestamp with time zone");
+            entity.Property(e => e.RevokedDate)
+                .HasColumnType("timestamp with time zone");
+
+            entity.HasOne(e => e.Account).WithMany()
+                .HasForeignKey(e => e.AccountId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_RefreshToken_SystemAccount");
+        });
         OnModelCreatingPartial(modelBuilder);
     }
 
