@@ -9,5 +9,7 @@
   <ItemGroup>
     <ProjectReference Include="..\TaskTrack.Repo\TaskTrack.Repo.csproj" />
   </ItemGroup>
-
+  <ItemGroup>
+	<FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
 </Project>

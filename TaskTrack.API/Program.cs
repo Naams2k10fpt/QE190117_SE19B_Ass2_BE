@@ -1,9 +1,11 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Identity;
 using TaskTrack.Repo.Data;
 using TaskTrack.Repo.Repositories;
 using TaskTrack.Service.Interfaces;
 using TaskTrack.Service.Services;
 using Npgsql;
+using SystemAccount = TaskTrack.Repo.Models.SystemAccount;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -50,6 +52,19 @@ builder.Services.AddScoped<ITaskRepository, TaskRepository>();
 builder.Services.AddScoped<ITaskService, TaskService>();
 builder.Services.AddScoped<ITagRepository, TagRepository>();
 builder.Services.AddScoped<ITagService, TagService>();
+builder.Services.AddScoped<IAccountRepository, AccountRepository>();
+
+builder.Services.Configure<PasswordHasherOptions>(options =>
+{
+    options.CompatibilityMode = PasswordHasherCompatibilityMode.IdentityV3;
+    options.IterationCount = 220_000;
+});
+
+builder.Services.AddScoped<
+    IPasswordHasher<SystemAccount>,
+    PasswordHasher<SystemAccount>>();
+
+builder.Services.AddScoped<IAuthService, AuthService>();
 
 builder.Services.AddCors(options =>
 {
