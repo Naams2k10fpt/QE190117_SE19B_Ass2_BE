@@ -53,6 +53,7 @@ builder.Services.AddScoped<ITaskService, TaskService>();
 builder.Services.AddScoped<ITagRepository, TagRepository>();
 builder.Services.AddScoped<ITagService, TagService>();
 builder.Services.AddScoped<IAccountRepository, AccountRepository>();
+builder.Services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
 
 builder.Services.Configure<PasswordHasherOptions>(options =>
 {
@@ -64,6 +65,7 @@ builder.Services.AddScoped<
     IPasswordHasher<SystemAccount>,
     PasswordHasher<SystemAccount>>();
 
+builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 
 builder.Services.AddCors(options =>
