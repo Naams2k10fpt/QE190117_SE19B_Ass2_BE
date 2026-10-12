@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="590" viewBox="0 0 1040 590" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="940" viewBox="0 0 1040 940" role="img" aria-labelledby="title desc">
   <title id="title">TaskTrack database entity relationship diagram</title>
-  <desc id="desc">Department has many Projects; Project has many Tasks; Task and Tag have a many-to-many relationship through TaskTag.</desc>
+  <desc id="desc">Department has many Projects; Project has many Tasks; Task and Tag have a many-to-many relationship through TaskTag. SystemAccount creates Tasks and owns RefreshTokens.</desc>
   <style>
     .bg { fill: #f8fafc; }
     .box { fill: #fff; stroke: #cbd5e1; stroke-width: 2; }
@@ -13,7 +13,7 @@
     .cardinality { font: 700 14px 'Segoe UI', Arial, sans-serif; fill: #334155; }
     .caption { font: 13px 'Segoe UI', Arial, sans-serif; fill: #475569; }
   </style>
-  <rect class="bg" width="1040" height="590"/>
+  <rect class="bg" width="1040" height="940"/>
   <text x="32" y="34" style="font:700 22px 'Segoe UI',Arial,sans-serif;fill:#0f172a">TaskTrack · PostgreSQL ERD</text>
   <text x="32" y="55" class="caption">PK = primary key · FK = foreign key · TaskTag links tasks and tags</text>
 
@@ -47,6 +47,7 @@
   <text class="key" x="716" y="268">FK  ProjectID</text>
   <text class="field" x="716" y="293">IsActive</text>
   <text class="field" x="716" y="318">CreatedDate · ModifiedDate</text>
+  <text class="key" x="716" y="343">FK  CreatedByID (nullable)</text>
 
   <rect class="box" x="355" y="425" width="270" height="103" rx="10"/>
   <path class="join" d="M365 425h250a10 10 0 0 1 10 10v30H355v-30a10 10 0 0 1 10-10z"/>
@@ -69,4 +70,30 @@
   <text class="cardinality" x="838" y="377">1</text><text class="cardinality" x="498" y="416">N</text>
   <path class="relation" d="M625 490H700"/>
   <text class="cardinality" x="634" y="481">N</text><text class="cardinality" x="681" y="481">1</text>
+  <rect class="box" x="30" y="425" width="255" height="240" rx="10"/>
+  <path class="head" d="M40 425h235a10 10 0 0 1 10 10v30H30v-30a10 10 0 0 1 10-10z"/>
+  <text class="heading" x="46" y="451">SystemAccount</text>
+  <text class="key" x="46" y="488">PK  AccountID</text>
+  <text class="field" x="46" y="514">FullName</text>
+  <text class="field" x="46" y="540">Email (unique)</text>
+  <text class="field" x="46" y="566">PasswordHash (PBKDF2)</text>
+  <text class="field" x="46" y="592">Role (0 Staff, 1 Admin)</text>
+  <text class="field" x="46" y="618">CreatedDate</text>
+  <rect class="box" x="355" y="640" width="340" height="270" rx="10"/>
+  <path class="join" d="M365 640h320a10 10 0 0 1 10 10v30H355v-30a10 10 0 0 1 10-10z"/>
+  <text class="heading" x="371" y="666">RefreshToken</text>
+  <text class="key" x="371" y="705">PK  RefreshTokenID</text>
+  <text class="key" x="371" y="731">FK  AccountID (delete cascade)</text>
+  <text class="field" x="371" y="757">SessionID (UUID)</text>
+  <text class="field" x="371" y="783">TokenHash (unique SHA256)</text>
+  <text class="field" x="371" y="809">CreatedDate</text>
+  <text class="field" x="371" y="835">ExpiresDate</text>
+  <text class="field" x="371" y="861">RevokedDate (nullable)</text>
+  <path class="relation" d="M158 425V360H675V343H700"/>
+  <text class="cardinality" x="166" y="413">1</text><text class="cardinality" x="680" y="334">N</text>
+  <text class="caption" x="320" y="352">Creator preserved on soft delete; FK restricts account deletion</text>
+  <path class="relation" d="M285 610H325V740H355"/>
+  <text class="cardinality" x="293" y="602">1</text><text class="cardinality" x="337" y="731">N</text>
+  <text class="caption" x="32" y="697">Legacy task creators stay nullable.</text>
+  <text class="caption" x="32" y="719">Business records are preserved.</text>
 </svg>
