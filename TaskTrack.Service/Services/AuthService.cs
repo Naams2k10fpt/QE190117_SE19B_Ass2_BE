@@ -71,38 +71,43 @@ public class AuthService : IAuthService
         var now = DateTime.UtcNow;
         var sessionId = Guid.NewGuid();
 
-        var accessTokenExpiresAt = now.AddMinutes(15);
         var refreshTokenExpiresAt = now.AddDays(7);
 
         var refreshToken = Convert.ToBase64String(
             RandomNumberGenerator.GetBytes(32));
 
-        var refreshTokenHash = Convert.ToHexString(
-            SHA256.HashData(Encoding.UTF8.GetBytes(refreshToken)))
-            .ToLowerInvariant();
-
-        var accessToken = _tokenService.CreateAccessToken(
-            account, sessionId, accessTokenExpiresAt);
-
         await _refreshTokenRepository.AddAsync(new RefreshToken
         {
             AccountId = account.AccountId,
             SessionId = sessionId,
-            TokenHash = refreshTokenHash,
+            TokenHash = HashRefreshToken(refreshToken),
             CreatedDate = now,
             ExpiresDate = refreshTokenExpiresAt
         });
 
-        return new TokenResponseDto(
-            accessToken,
-            accessTokenExpiresAt,
-            refreshToken,
-            refreshTokenExpiresAt,
-            new AccountDto(
-                account.AccountId,
-                account.FullName,
-                account.Email,
-                account.Role,
-                account.CreatedDate));
+        return CreateResponse(account, sessionId, refreshToken, refreshTokenExpiresAt);
     }
+
+    private static string HashRefreshToken(string token) => Convert.ToHexString(
+        SHA256.HashData(Encoding.UTF8.GetBytes(token))).ToLowerInvariant();
+
+    private TokenResponseDto CreateResponse(SystemAccount account, Guid sessionId, string refreshToken, DateTime refreshExpiresAt)
+    {
+        var accessExpiresAt = DateTime.UtcNow.AddMinutes(15);
+        return new TokenResponseDto(
+            _tokenService.CreateAccessToken(account, sessionId, accessExpiresAt), accessExpiresAt,
+            refreshToken, refreshExpiresAt,
+            new AccountDto(account.AccountId, account.FullName, account.Email, account.Role, account.CreatedDate));
+    }
+
+    public async Task<TokenResponseDto?> RefreshAsync(string refreshToken)
+    {
+        var replacement = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+        var saved = await _refreshTokenRepository.RotateAsync(
+            HashRefreshToken(refreshToken), HashRefreshToken(replacement), DateTime.UtcNow);
+        return saved is null ? null : CreateResponse(saved.Account, saved.SessionId, replacement, saved.ExpiresDate);
+    }
+
+    public Task LogoutAsync(string refreshToken) =>
+        _refreshTokenRepository.RevokeSessionAsync(HashRefreshToken(refreshToken), DateTime.UtcNow);
 }

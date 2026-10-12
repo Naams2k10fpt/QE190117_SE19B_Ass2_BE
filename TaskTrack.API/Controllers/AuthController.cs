@@ -55,6 +55,22 @@ public class AuthController : ControllerBase
         return Ok(result);
     }
 
+    [AllowAnonymous]
+    [HttpPost("refresh")]
+    public async Task<ActionResult<TokenResponseDto>> Refresh([FromBody] RefreshTokenDto input)
+    {
+        var result = await _service.RefreshAsync(input.RefreshToken);
+        return result is null ? Unauthorized(new { message = "Invalid or expired refresh token." }) : Ok(result);
+    }
+
+    [AllowAnonymous]
+    [HttpPost("logout")]
+    public async Task<IActionResult> Logout([FromBody] RefreshTokenDto input)
+    {
+        await _service.LogoutAsync(input.RefreshToken);
+        return NoContent();
+    }
+
     [Authorize(Roles = "0,1")]
     [HttpGet("me")]
     public async Task<ActionResult<AccountDto>> Me()

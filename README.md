@@ -27,6 +27,7 @@ The Render backend and Vercel frontend URLs are pending. Set `DATABASE_URL` to t
 - Department/project deletion is rejected when child records exist; tag deletion is rejected while any task uses the tag.
 - Task DELETE sets `IsActive` to false and preserves `CreatedByID`. Task creation takes its creator from the authenticated JWT, ignoring client input.
 - Register creates only Staff and hashes passwords with PBKDF2. Login issues 15-minute access tokens and stores only hashes of 7-day refresh tokens.
+- `POST /api/auth/refresh` atomically rotates a refresh token; replay revokes its entire session. Rotation retains the original 7-day deadline. `POST /api/auth/logout` revokes that session and is idempotent. Both accept `{ "refreshToken": "..." }` so logout also works when an access token has expired.
 - `GET /api/auth/me` returns the current account. All `/api/accounts` endpoints require Admin. Account deletion returns 409 if the account created any task, including a soft-deleted task.
 - Role changes revoke the account's sessions. JWT authentication checks the live account, current role and active session, so deleted accounts and revoked privileges cannot keep using old tokens.
 - CORS allows the origin configured by `FRONTEND_URL`, or the local frontend by default.

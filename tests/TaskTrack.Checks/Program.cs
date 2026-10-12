@@ -2,13 +2,14 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text;
+using System.Security.Cryptography;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Npgsql;
-using TaskTrack.Repo.Models;
+using SystemAccount = TaskTrack.Repo.Models.SystemAccount;
 
 var config = new ConfigurationBuilder().SetBasePath(Directory.GetCurrentDirectory())
     .AddJsonFile("TaskTrack.API/appsettings.json")
@@ -134,6 +135,55 @@ try
     await Send("POST", "/api/tags", 401, new { }, Signed(claims.Where(c => c.Type != "AccountID")));
     await Send("POST", "/api/tags", 401, new { }, Signed(claims.Select(c => c.Type == "SessionID" ? new Claim("SessionID", Guid.NewGuid().ToString()) : c)));
 
+    await Send("POST", "/api/auth/refresh", 400, new { });
+    await Send("POST", "/api/auth/logout", 400, new { });
+    await Send("POST", "/api/auth/refresh", 401, new { refreshToken = "not-a-token" });
+    await Send("POST", "/api/auth/logout", 204, new { refreshToken = "not-a-token" });
+    var sessionLogin = await Send("POST", "/api/auth/login", 200, new { email = prefix + "@example.test", password });
+    var originalRefresh = Text(sessionLogin, "refreshToken");
+    var originalAccess = Text(sessionLogin, "accessToken");
+    string Hash(string token) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token))).ToLowerInvariant();
+    Check(Convert.ToInt32(await Sql("SELECT COUNT(*) FROM public.\"RefreshToken\" WHERE \"TokenHash\"=@hash AND \"AccountID\"=@id", ("hash", Hash(originalRefresh)), ("id", staffId))) == 1,
+        "Only the refresh token hash must be stored.");
+    var rotated = await Send("POST", "/api/auth/refresh", 200, new { refreshToken = originalRefresh });
+    Check(Text(rotated, "refreshToken") != originalRefresh, "Refresh must rotate the raw token.");
+    Check(Math.Abs((DateTime.Parse(Text(rotated, "refreshTokenExpiresAt")) - DateTime.Parse(Text(sessionLogin, "refreshTokenExpiresAt"))).Ticks) <= 10,
+        "Rotation must preserve the absolute session expiry, allowing PostgreSQL microsecond precision.");
+    await Send("GET", "/api/auth/me", 200, token: Text(rotated, "accessToken"));
+    await Send("GET", "/api/auth/me", 200, token: originalAccess);
+    await Send("POST", "/api/auth/refresh", 401, new { refreshToken = originalRefresh });
+    await Send("GET", "/api/auth/me", 401, token: Text(rotated, "accessToken"));
+    await Send("POST", "/api/auth/refresh", 401, new { refreshToken = Text(rotated, "refreshToken") });
+
+    sessionLogin = await Send("POST", "/api/auth/login", 200, new { email = prefix + "@example.test", password });
+    var concurrentToken = Text(sessionLogin, "refreshToken");
+    var concurrentResponses = await Task.WhenAll(
+        http.PostAsJsonAsync("/api/auth/refresh", new { refreshToken = concurrentToken }),
+        http.PostAsJsonAsync("/api/auth/refresh", new { refreshToken = concurrentToken }));
+    Check(concurrentResponses.Count(r => (int)r.StatusCode == 200) == 1 && concurrentResponses.Count(r => (int)r.StatusCode == 401) == 1,
+        "Concurrent refresh must have exactly one winner and one replay rejection.");
+    var winner = JsonNode.Parse(await concurrentResponses.Single(r => (int)r.StatusCode == 200).Content.ReadAsStringAsync());
+    foreach (var response in concurrentResponses) response.Dispose();
+    await Send("GET", "/api/auth/me", 401, token: Text(winner, "accessToken"));
+
+    sessionLogin = await Send("POST", "/api/auth/login", 200, new { email = prefix + "@example.test", password });
+    await Send("POST", "/api/auth/logout", 204, new { refreshToken = Text(sessionLogin, "refreshToken") });
+    await Send("POST", "/api/auth/logout", 204, new { refreshToken = Text(sessionLogin, "refreshToken") });
+    await Send("GET", "/api/auth/me", 401, token: Text(sessionLogin, "accessToken"));
+    await Send("POST", "/api/auth/refresh", 401, new { refreshToken = Text(sessionLogin, "refreshToken") });
+
+    sessionLogin = await Send("POST", "/api/auth/login", 200, new { email = prefix + "@example.test", password });
+    await Sql("UPDATE public.\"RefreshToken\" SET \"CreatedDate\"=CURRENT_TIMESTAMP - INTERVAL '2 hours', \"ExpiresDate\"=CURRENT_TIMESTAMP - INTERVAL '1 hour' WHERE \"TokenHash\"=@hash AND \"AccountID\"=@id",
+        ("hash", Hash(Text(sessionLogin, "refreshToken"))), ("id", staffId));
+    await Send("POST", "/api/auth/refresh", 401, new { refreshToken = Text(sessionLogin, "refreshToken") });
+    await Send("GET", "/api/auth/me", 401, token: Text(sessionLogin, "accessToken"));
+
+    sessionLogin = await Send("POST", "/api/auth/login", 200, new { email = prefix + "@example.test", password });
+    await Send("PUT", $"/api/accounts/{staffId}", 204, new { role = 1 }, adminToken);
+    await Send("POST", "/api/auth/refresh", 401, new { refreshToken = Text(sessionLogin, "refreshToken") });
+    await Send("PUT", $"/api/accounts/{staffId}", 204, new { role = 0 }, adminToken);
+    staffToken = await Login(prefix + "@example.test");
+
     foreach (var resource in new[] { "departments", "projects", "tasks", "tags" })
     {
         await Send("POST", $"/api/{resource}", 400, new { }, staffToken);
@@ -228,4 +278,4 @@ finally
         """, ("prefix", prefix + "%"));
     Check(await Fingerprint() == baseline, "Business data must match the original snapshot after fixture cleanup.");
 }
-Console.WriteLine($"PASS: {checks} assertions across all business routes, guest/Staff/Admin permissions, account lifecycle, signed-token rejection, creator and soft-delete; fixtures cleaned and original business data unchanged.");
+Console.WriteLine($"PASS: {checks} assertions across all business routes, guest/Staff/Admin permissions, account lifecycle, JWT rejection, refresh rotation/replay/concurrency/logout, creator and soft-delete; fixtures cleaned and original business data unchanged.");
