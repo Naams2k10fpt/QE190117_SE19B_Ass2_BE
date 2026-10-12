@@ -1,0 +1,15 @@
+name: Backend CI
+on:
+  push: {}
+  pull_request:
+    branches: [main]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - run: dotnet build QE190117_SE19B_Ass2_BE.sln --configuration Release
+      - run: dotnet build tests/TaskTrack.Checks --configuration Release

@@ -1,0 +1,231 @@
+using System.IdentityModel.Tokens.Jwt;
+using System.Net.Http.Json;
+using System.Security.Claims;
+using System.Text;
+using System.Text.Json.Nodes;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
+using Npgsql;
+using TaskTrack.Repo.Models;
+
+var config = new ConfigurationBuilder().SetBasePath(Directory.GetCurrentDirectory())
+    .AddJsonFile("TaskTrack.API/appsettings.json")
+    .AddUserSecrets("bd82d864-be53-4110-b4f1-6e466bc1c045")
+    .AddEnvironmentVariables().Build();
+var uri = new Uri(config["DATABASE_URL"] ?? throw new Exception("Configure DATABASE_URL."));
+var credentials = uri.UserInfo.Split(':', 2);
+var connectionString = new NpgsqlConnectionStringBuilder
+{
+    Host = uri.Host, Port = uri.Port > 0 ? uri.Port : 5432,
+    Database = Uri.UnescapeDataString(uri.AbsolutePath.TrimStart('/')),
+    Username = Uri.UnescapeDataString(credentials[0]), Password = Uri.UnescapeDataString(credentials[1]),
+    SslMode = SslMode.Require
+}.ConnectionString;
+await using var db = new NpgsqlConnection(connectionString);
+await db.OpenAsync();
+using var http = new HttpClient { BaseAddress = new Uri(config["TEST_API_URL"] ?? "http://127.0.0.1:5127"), Timeout = TimeSpan.FromSeconds(60) };
+var prefix = "as2check" + Guid.NewGuid().ToString("N");
+var password = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(24));
+var checks = 0;
+var staffId = 0;
+var adminId = 0;
+var taskId = 0;
+var baseline = await Fingerprint();
+
+void Check(bool ok, string message)
+{
+    if (!ok) throw new Exception(message);
+    checks++;
+}
+int Id(JsonNode? node, string key) => node![key]!.GetValue<int>();
+string Text(JsonNode? node, string key) => node![key]!.GetValue<string>();
+async Task<JsonNode?> Send(string method, string path, int expected, object? body = null, string? token = null)
+{
+    using var request = new HttpRequestMessage(new HttpMethod(method), path);
+    if (body is not null) request.Content = JsonContent.Create(body);
+    if (token is not null) request.Headers.Authorization = new("Bearer", token);
+    using var response = await http.SendAsync(request);
+    Check((int)response.StatusCode == expected, $"{method} {path}: expected {expected}, got {(int)response.StatusCode}.");
+    if (response.Content.Headers.ContentType?.MediaType?.Contains("json") == true)
+        return JsonNode.Parse(await response.Content.ReadAsStringAsync());
+    return null;
+}
+async Task<string> Login(string email) => Text(await Send("POST", "/api/auth/login", 200, new { email, password }), "accessToken");
+async Task<object?> Sql(string sql, params (string name, object value)[] parameters)
+{
+    await using var command = new NpgsqlCommand(sql, db);
+    foreach (var (name, value) in parameters) command.Parameters.AddWithValue(name, value);
+    return await command.ExecuteScalarAsync();
+}
+async Task<string> Fingerprint()
+{
+    var hashes = new List<string>();
+    foreach (var (table, orderBy) in new[]
+    {
+        ("Department", "\"DepartmentID\""), ("Project", "\"ProjectID\""),
+        ("Task", "\"TaskID\""), ("Tag", "\"TagID\""), ("TaskTag", "\"TaskID\", \"TagID\"")
+    })
+        hashes.Add((string)(await Sql($"SELECT md5(COALESCE(jsonb_agg(r)::text, '[]')) FROM (SELECT * FROM public.\"{table}\" ORDER BY {orderBy}) r"))!);
+    return string.Join("/", hashes);
+}
+
+try
+{
+    foreach (var resource in new[] { "departments", "projects", "tasks", "tags" })
+    {
+        await Send("GET", $"/api/{resource}", 200);
+        await Send("POST", $"/api/{resource}", 401, new { });
+        await Send("PUT", $"/api/{resource}/0", 401, new { });
+        await Send("DELETE", $"/api/{resource}/0", 401);
+    }
+    foreach (var (method, path) in new[] { ("GET", ""), ("GET", "/0"), ("PUT", "/0"), ("DELETE", "/0") })
+        await Send(method, "/api/accounts" + path, 401, method == "PUT" ? new { } : null);
+    await Send("GET", "/api/auth/me", 401);
+    await Send("POST", "/api/auth/register", 400, new { });
+    var staff = await Send("POST", "/api/auth/register", 201, new { fullName = prefix, email = prefix + "@example.test", password, role = 1 });
+    staffId = Id(staff, "accountId");
+    Check(Id(staff, "role") == 0 && staff!["passwordHash"] is null, "Registration must create Staff without exposing a hash.");
+    await Send("POST", "/api/auth/register", 409, new { fullName = prefix, email = prefix.ToUpperInvariant() + "@EXAMPLE.TEST", password });
+    await Send("POST", "/api/auth/login", 401, new { email = prefix + "@example.test", password = "wrong-password" });
+    var staffToken = await Login(prefix + "@example.test");
+    foreach (var (method, path) in new[] { ("GET", ""), ("GET", "/0"), ("PUT", "/0"), ("DELETE", "/0") })
+        await Send(method, "/api/accounts" + path, 403, method == "PUT" ? new { } : null, staffToken);
+    await Send("GET", "/api/auth/me", 200, token: staffToken);
+
+    var admin = new SystemAccount { FullName = prefix + " Admin", Email = prefix + "-admin@example.test", Role = 1 };
+    var hasher = new PasswordHasher<SystemAccount>(Options.Create(new PasswordHasherOptions { IterationCount = 220_000 }));
+    var hash = hasher.HashPassword(admin, password);
+    adminId = Convert.ToInt32(await Sql("INSERT INTO public.\"SystemAccount\" (\"FullName\", \"Email\", \"PasswordHash\", \"Role\") VALUES (@name,@email,@hash,1) RETURNING \"AccountID\"",
+        ("name", admin.FullName), ("email", admin.Email), ("hash", hash)));
+    var adminToken = await Login(admin.Email);
+    var adminTag = Id(await Send("POST", "/api/tags", 201, new { tagName = prefix + " Admin", color = "#123456" }, adminToken), "tagId");
+    await Send("PUT", $"/api/tags/{adminTag}", 204, new { tagName = prefix + " Admin U", color = "#654321" }, adminToken);
+    await Send("DELETE", $"/api/tags/{adminTag}", 204, token: adminToken);
+    var accounts = await Send("GET", "/api/accounts", 200, token: adminToken);
+    Check(!accounts!.ToJsonString().Contains("passwordHash", StringComparison.OrdinalIgnoreCase), "Account list must not expose hashes.");
+    await Send("GET", $"/api/accounts/{staffId}", 200, token: adminToken);
+    await Send("GET", "/api/accounts/0", 404, token: adminToken);
+    await Send("PUT", "/api/accounts/0", 404, new { role = 0 }, adminToken);
+    await Send("DELETE", "/api/accounts/0", 404, token: adminToken);
+    await Send("PUT", $"/api/accounts/{staffId}", 400, new { }, adminToken);
+    await Send("PUT", $"/api/accounts/{staffId}", 400, new { role = 2 }, adminToken);
+    await Send("PUT", $"/api/accounts/{staffId}", 400, new { fullName = " " }, adminToken);
+    await Send("PUT", $"/api/accounts/{staffId}", 204, new { fullName = prefix + " Updated" }, adminToken);
+    Check(Text(await Send("GET", "/api/auth/me", 200, token: staffToken), "fullName") == prefix + " Updated", "Name update must persist without invalidating an unchanged role.");
+    await Send("PUT", $"/api/accounts/{staffId}", 204, new { role = 1 }, adminToken);
+    await Send("GET", "/api/auth/me", 401, token: staffToken);
+    var elevatedToken = await Login(prefix + "@example.test");
+    await Send("GET", "/api/accounts", 200, token: elevatedToken);
+    await Send("PUT", $"/api/accounts/{staffId}", 204, new { role = 0 }, adminToken);
+    await Send("GET", "/api/accounts", 401, token: elevatedToken);
+    staffToken = await Login(prefix + "@example.test");
+
+    var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(config["JWT_SECRET"]!));
+    string Signed(IEnumerable<Claim> claims, bool expired = false, bool wrongKey = false) => new JwtSecurityTokenHandler().WriteToken(new JwtSecurityToken(
+        config["Jwt:Issuer"], config["Jwt:Audience"], claims, DateTime.UtcNow.AddMinutes(-2),
+        expired ? DateTime.UtcNow.AddMinutes(-1) : DateTime.UtcNow.AddMinutes(2),
+        new SigningCredentials(wrongKey ? new SymmetricSecurityKey(new byte[32]) : key, SecurityAlgorithms.HmacSha256)));
+    var session = new JwtSecurityTokenHandler().ReadJwtToken(staffToken).Claims.First(c => c.Type == "SessionID").Value;
+    var claims = new[] { new Claim("AccountID", staffId.ToString()), new Claim("Role", "0"), new Claim("SessionID", session) };
+    await Send("POST", "/api/tags", 401, new { }, Signed(claims, expired: true));
+    await Send("POST", "/api/tags", 401, new { }, Signed(claims, wrongKey: true));
+    await Send("POST", "/api/tags", 401, new { }, Signed(claims.Where(c => c.Type != "AccountID")));
+    await Send("POST", "/api/tags", 401, new { }, Signed(claims.Select(c => c.Type == "SessionID" ? new Claim("SessionID", Guid.NewGuid().ToString()) : c)));
+
+    foreach (var resource in new[] { "departments", "projects", "tasks", "tags" })
+    {
+        await Send("POST", $"/api/{resource}", 400, new { }, staffToken);
+        await Send("PUT", $"/api/{resource}/0", 400, new { }, staffToken);
+        await Send("DELETE", $"/api/{resource}/0", 404, token: staffToken);
+    }
+    await Send("GET", "/api/departments/search", 400);
+    await Send("GET", "/api/projects/search?status=4", 400);
+    await Send("GET", "/api/projects/search?departmentId=0", 400);
+    foreach (var query in new[] { "status=4", "priority=4", "projectId=0", "tagId=0" })
+        await Send("GET", "/api/tasks/search?" + query, 400);
+    foreach (var resource in new[] { "departments", "projects", "tasks" })
+        await Send("GET", $"/api/{resource}/0", 404);
+
+    var department = await Send("POST", "/api/departments", 201, new { departmentName = prefix, departmentDescription = "Fixture only" }, staffToken);
+    var departmentId = Id(department, "departmentId");
+    await Send("GET", $"/api/departments/{departmentId}", 200);
+    Check((await Send("GET", "/api/departments/search?name=" + prefix, 200))!.AsArray().Count == 1, "Department search must find fixture.");
+    await Send("PUT", $"/api/departments/{departmentId}", 204, new { departmentName = prefix + " U", departmentDescription = "Updated fixture", isActive = true }, staffToken);
+    Check(Text(await Send("GET", $"/api/departments/{departmentId}", 200), "departmentDescription") == "Updated fixture", "Department update must persist.");
+    await Send("PUT", "/api/departments/0", 404, new { departmentName = prefix, departmentDescription = "Fixture", isActive = true }, staffToken);
+
+    var projectBody = new { projectName = prefix, description = "Fixture only", startDate = "2026-10-12", endDate = "2026-10-31", status = 0, departmentId };
+    var projectId = Id(await Send("POST", "/api/projects", 201, projectBody, staffToken), "projectId");
+    await Send("GET", $"/api/projects/{projectId}", 200);
+    await Send("GET", $"/api/projects/department/{departmentId}", 200);
+    Check((await Send("GET", "/api/projects/department/0", 200))!.AsArray().Count == 0, "Missing department must return an empty project list.");
+    Check((await Send("GET", $"/api/projects/search?name={prefix}&status=0&departmentId={departmentId}", 200))!.AsArray().Count == 1, "Project search must find fixture.");
+    Check((await Send("GET", $"/api/projects/search?name={prefix}&status=3", 200))!.AsArray().Count == 0, "Project filter must reject mismatched status.");
+    await Send("POST", "/api/projects", 400, new { projectName = prefix, startDate = "2026-10-12", endDate = "2026-10-01", status = 0, departmentId = int.MaxValue }, staffToken);
+    var projectUpdate = new { projectName = prefix + " U", description = "Updated fixture", startDate = "2026-10-12", endDate = "2026-11-15", status = 1, departmentId, isActive = true };
+    await Send("PUT", $"/api/projects/{projectId}", 204, projectUpdate, staffToken);
+    Check(Id(await Send("GET", $"/api/projects/{projectId}", 200), "status") == 1, "Project update must persist.");
+    await Send("PUT", "/api/projects/0", 404, projectUpdate, staffToken);
+    await Send("DELETE", $"/api/departments/{departmentId}", 400, token: staffToken);
+
+    var tagId = Id(await Send("POST", "/api/tags", 201, new { tagName = prefix, color = "#abcdef" }, staffToken), "tagId");
+    await Send("POST", "/api/tags", 400, new { tagName = prefix.ToUpperInvariant(), color = "#123456" }, staffToken);
+    await Send("POST", "/api/tags", 400, new { tagName = prefix + " invalid", color = "blue" }, staffToken);
+    await Send("PUT", $"/api/tags/{tagId}", 204, new { tagName = prefix + " U", color = "#fedcba" }, staffToken);
+    var tag = (await Send("GET", "/api/tags", 200))!.AsArray().Single(n => Id(n, "tagId") == tagId);
+    Check(Text(tag, "color") == "#FEDCBA", "Tag color normalization must persist.");
+    await Send("PUT", "/api/tags/0", 404, new { tagName = prefix + " missing", color = "#123456" }, staffToken);
+
+    await Send("POST", "/api/tasks", 400, new { title = " ", status = 4, priority = 4, projectId = 0 }, staffToken);
+    var badTask = new { title = prefix, status = 0, priority = 1, projectId = int.MaxValue, tagIds = new[] { int.MaxValue } };
+    await Send("POST", "/api/tasks", 400, badTask, staffToken);
+    await Send("PUT", "/api/tasks/0", 400, badTask, staffToken);
+    taskId = Id(await Send("POST", "/api/tasks", 201, new { title = prefix, status = 0, priority = 0, projectId, tagIds = new[] { tagId, tagId }, createdById = adminId }, staffToken), "taskId");
+    var detail = await Send("GET", $"/api/tasks/{taskId}", 200);
+    Check(Id(detail, "priority") == 0, "Task creation must preserve priority 0.");
+    Check(detail!["tags"]!.AsArray().Count == 1, "Duplicate tags must not create duplicate links.");
+    Check(Convert.ToInt32(await Sql("SELECT \"CreatedByID\" FROM public.\"Task\" WHERE \"TaskID\"=@id", ("id", taskId))) == staffId, "Task creator must be authenticated Staff, ignoring client input.");
+    await Send("GET", $"/api/tasks/project/{projectId}", 200);
+    Check((await Send("GET", "/api/tasks/project/0", 200))!.AsArray().Count == 0, "Missing project must return an empty task list.");
+    Check((await Send("GET", $"/api/tasks/search?title={prefix}&status=0&priority=0&projectId={projectId}&tagId={tagId}", 200))!.AsArray().Count == 1, "Task filters must find fixture.");
+    await Send("DELETE", $"/api/accounts/{staffId}", 409, token: adminToken);
+    await Send("DELETE", $"/api/projects/{projectId}", 400, token: staffToken);
+    await Send("DELETE", $"/api/tags/{tagId}", 400, token: staffToken);
+    var taskUpdate = new { title = prefix + " U", status = 2, priority = 3, projectId, tagIds = Array.Empty<int>() };
+    await Send("PUT", $"/api/tasks/{taskId}", 204, taskUpdate, staffToken);
+    detail = await Send("GET", $"/api/tasks/{taskId}", 200);
+    Check(Id(detail, "priority") == 3 && detail!["tags"]!.AsArray().Count == 0 && detail["modifiedDate"] is not null, "Task update must persist and clear tags.");
+    await Send("PUT", "/api/tasks/0", 404, taskUpdate, staffToken);
+    await Send("DELETE", $"/api/tasks/{taskId}", 204, token: staffToken);
+    await Send("GET", $"/api/tasks/{taskId}", 404);
+    await Send("PUT", $"/api/tasks/{taskId}", 404, taskUpdate, staffToken);
+    await Send("DELETE", $"/api/tasks/{taskId}", 404, token: staffToken);
+    Check((await Send("GET", "/api/tasks/search?title=" + prefix, 200))!.AsArray().Count == 0, "Deleted task must not be searchable.");
+    Check((await Send("GET", $"/api/tasks/project/{projectId}", 200))!.AsArray().Count == 0, "Deleted task must not appear in project list.");
+    await Send("DELETE", $"/api/accounts/{staffId}", 409, token: adminToken);
+    Check((bool)(await Sql("SELECT NOT \"IsActive\" AND \"CreatedByID\"=@creator FROM public.\"Task\" WHERE \"TaskID\"=@id", ("creator", staffId), ("id", taskId)))!, "Soft deletion must preserve row and creator.");
+    await Sql("DELETE FROM public.\"Task\" WHERE \"TaskID\"=@id AND \"CreatedByID\"=@creator", ("id", taskId), ("creator", staffId));
+    await Send("DELETE", $"/api/tags/{tagId}", 204, token: staffToken);
+    await Send("DELETE", $"/api/projects/{projectId}", 204, token: staffToken);
+    await Send("GET", $"/api/projects/{projectId}", 404);
+    await Send("DELETE", $"/api/departments/{departmentId}", 204, token: staffToken);
+    await Send("GET", $"/api/departments/{departmentId}", 404);
+    await Send("DELETE", $"/api/accounts/{staffId}", 204, token: adminToken);
+    await Send("GET", "/api/auth/me", 401, token: staffToken);
+    await Send("GET", $"/api/accounts/{staffId}", 404, token: adminToken);
+}
+finally
+{
+    await Sql("""
+        DELETE FROM public."TaskTag" WHERE "TaskID" IN (SELECT "TaskID" FROM public."Task" WHERE "CreatedByID" IN (SELECT "AccountID" FROM public."SystemAccount" WHERE "Email" LIKE @prefix));
+        DELETE FROM public."Task" WHERE "CreatedByID" IN (SELECT "AccountID" FROM public."SystemAccount" WHERE "Email" LIKE @prefix);
+        DELETE FROM public."Tag" WHERE "TagName" LIKE @prefix;
+        DELETE FROM public."Project" WHERE "ProjectName" LIKE @prefix;
+        DELETE FROM public."Department" WHERE "DepartmentName" LIKE @prefix;
+        DELETE FROM public."SystemAccount" WHERE "Email" LIKE @prefix;
+        """, ("prefix", prefix + "%"));
+    Check(await Fingerprint() == baseline, "Business data must match the original snapshot after fixture cleanup.");
+}
+Console.WriteLine($"PASS: {checks} assertions across all business routes, guest/Staff/Admin permissions, account lifecycle, signed-token rejection, creator and soft-delete; fixtures cleaned and original business data unchanged.");

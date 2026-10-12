@@ -58,6 +58,7 @@ builder.Services.AddScoped<ITaskService, TaskService>();
 builder.Services.AddScoped<ITagRepository, TagRepository>();
 builder.Services.AddScoped<ITagService, TagService>();
 builder.Services.AddScoped<IAccountRepository, AccountRepository>();
+builder.Services.AddScoped<IAccountService, AccountService>();
 builder.Services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
 
 builder.Services.Configure<PasswordHasherOptions>(options =>
@@ -109,6 +110,26 @@ builder.Services
 
             NameClaimType = "Email",
             RoleClaimType = "Role"
+        };
+
+        options.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = async context =>
+            {
+                var principal = context.Principal;
+                if (!int.TryParse(principal?.FindFirst("AccountID")?.Value, out var id) || id <= 0 ||
+                    !Guid.TryParse(principal?.FindFirst("SessionID")?.Value, out var sessionId))
+                {
+                    context.Fail("Invalid account or session.");
+                    return;
+                }
+                var accounts = context.HttpContext.RequestServices.GetRequiredService<IAccountRepository>();
+                var sessions = context.HttpContext.RequestServices.GetRequiredService<IRefreshTokenRepository>();
+                var account = await accounts.GetByIdAsync(id);
+                if (account is null || principal?.FindFirst("Role")?.Value != account.Role.ToString() ||
+                    !await sessions.HasActiveSessionAsync(id, sessionId, DateTime.UtcNow))
+                    context.Fail("Account or session is no longer valid.");
+            }
         };
     });
 

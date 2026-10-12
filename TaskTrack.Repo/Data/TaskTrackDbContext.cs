@@ -84,7 +84,7 @@ public partial class TaskTrackDbContext : DbContext
                 .HasColumnType("timestamp without time zone");
             entity.Property(e => e.IsActive).HasDefaultValue(true);
             entity.Property(e => e.ModifiedDate).HasColumnType("timestamp without time zone");
-            entity.Property(e => e.Priority).HasDefaultValue((short)1);
+            entity.Property(e => e.Priority).HasDefaultValue((short)1).HasSentinel((short)-1);
             entity.Property(e => e.ProjectId).HasColumnName("ProjectID");
             entity.Property(e => e.Status).HasDefaultValue((short)0);
             entity.Property(e => e.Title).HasMaxLength(300);

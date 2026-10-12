@@ -11,7 +11,7 @@ Assignment 2 reuses the existing PostgreSQL database on Render. Back it up befor
 ## Run locally
 
 1. Use the existing PostgreSQL database and preserve its data. Back it up before applying Assignment 2 schema updates; do not rerun the initialization script.
-2. Set `ConnectionStrings__DefaultConnection` or `DATABASE_URL` in your environment (or use local ASP.NET Core user secrets). `.env.example` documents the variables; .NET does not load a `.env` file automatically. Keep real credentials out of Git.
+2. Apply `database/001_assignment2_schema.sql` once after backup. Set `ConnectionStrings__DefaultConnection` or `DATABASE_URL` and a `JWT_SECRET` of at least 32 UTF-8 bytes in your environment (or local ASP.NET Core user secrets). Keep real credentials out of Git.
 3. Set `FRONTEND_URL` to the allowed frontend origin, without a trailing slash. It defaults to `http://localhost:3000` for local development.
 4. From the repository root, run `dotnet restore` and `dotnet run --project TaskTrack.API --launch-profile http`.
 
@@ -23,9 +23,12 @@ The Render backend and Vercel frontend URLs are pending. Set `DATABASE_URL` to t
 
 ## API behavior
 
-- Departments and projects support public CRUD and search; deletion is rejected when child records exist.
-- Tasks support public CRUD and multi-criteria search. DELETE soft-deletes a task by setting `IsActive` to false.
-- Tags support public CRUD; deletion is rejected while any task uses the tag.
+- All business GET endpoints and search remain public. POST, PUT and DELETE require Staff (role 0) or Admin (role 1).
+- Department/project deletion is rejected when child records exist; tag deletion is rejected while any task uses the tag.
+- Task DELETE sets `IsActive` to false and preserves `CreatedByID`. Task creation takes its creator from the authenticated JWT, ignoring client input.
+- Register creates only Staff and hashes passwords with PBKDF2. Login issues 15-minute access tokens and stores only hashes of 7-day refresh tokens.
+- `GET /api/auth/me` returns the current account. All `/api/accounts` endpoints require Admin. Account deletion returns 409 if the account created any task, including a soft-deleted task.
+- Role changes revoke the account's sessions. JWT authentication checks the live account, current role and active session, so deleted accounts and revoked privileges cannot keep using old tokens.
 - CORS allows the origin configured by `FRONTEND_URL`, or the local frontend by default.
 
-JWT authentication, role-based authorization, and account management are not implemented yet.
+See [tests/README.md](tests/README.md) for HTTP/database regression checks. GitHub Actions builds the API and regression runner on every push; live integration checks run separately with a configured database.

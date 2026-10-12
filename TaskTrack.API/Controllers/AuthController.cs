@@ -10,10 +10,12 @@ namespace TaskTrack.API.Controllers;
 public class AuthController : ControllerBase
 {
     private readonly IAuthService _service;
+    private readonly IAccountService _accounts;
 
-    public AuthController(IAuthService service)
+    public AuthController(IAuthService service, IAccountService accounts)
     {
         _service = service;
+        _accounts = accounts;
     }
 
     [AllowAnonymous]
@@ -51,5 +53,15 @@ public class AuthController : ControllerBase
         }
 
         return Ok(result);
+    }
+
+    [Authorize(Roles = "0,1")]
+    [HttpGet("me")]
+    public async Task<ActionResult<AccountDto>> Me()
+    {
+        if (!int.TryParse(User.FindFirst("AccountID")?.Value, out var id))
+            return Unauthorized();
+        var account = await _accounts.GetByIdAsync(id);
+        return account is null ? Unauthorized() : Ok(account);
     }
 }
