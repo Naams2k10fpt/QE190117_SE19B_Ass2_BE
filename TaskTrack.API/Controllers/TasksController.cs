@@ -109,6 +109,8 @@ public class TasksController : ControllerBase
     public async Task<IActionResult> Update(
     int id, [FromBody] UpdateTaskDto input)
     {
+        if (!int.TryParse(User.FindFirst("AccountID")?.Value, out var updatedById) || updatedById <= 0)
+            return Unauthorized();
         if (input.ProjectId.HasValue &&
             !await _service.ProjectExistsAsync(input.ProjectId.Value))
         {
@@ -125,7 +127,7 @@ public class TasksController : ControllerBase
         if (!ModelState.IsValid)
             return ValidationProblem(ModelState);
 
-        var updated = await _service.UpdateAsync(id, input);
+        var updated = await _service.UpdateAsync(id, input, updatedById);
 
         if (!updated)
             return NotFound();
@@ -137,7 +139,9 @@ public class TasksController : ControllerBase
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> Delete(int id)
     {
-        var deleted = await _service.SoftDeleteAsync(id);
+        if (!int.TryParse(User.FindFirst("AccountID")?.Value, out var updatedById) || updatedById <= 0)
+            return Unauthorized();
+        var deleted = await _service.SoftDeleteAsync(id, updatedById);
 
         if (!deleted)
             return NotFound();

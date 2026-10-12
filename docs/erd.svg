@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1040" height="940" viewBox="0 0 1040 940" role="img" aria-labelledby="title desc">
   <title id="title">TaskTrack database entity relationship diagram</title>
-  <desc id="desc">Department has many Projects; Project has many Tasks; Task and Tag have a many-to-many relationship through TaskTag. SystemAccount creates Tasks and owns RefreshTokens.</desc>
+  <desc id="desc">Department has many Projects; Project has many Tasks; Task and Tag have a many-to-many relationship through TaskTag. SystemAccount creates and updates Tasks and owns RefreshTokens.</desc>
   <style>
     .bg { fill: #f8fafc; }
     .box { fill: #fff; stroke: #cbd5e1; stroke-width: 2; }
@@ -47,7 +47,7 @@
   <text class="key" x="716" y="268">FK  ProjectID</text>
   <text class="field" x="716" y="293">IsActive</text>
   <text class="field" x="716" y="318">CreatedDate · ModifiedDate</text>
-  <text class="key" x="716" y="343">FK  CreatedByID (nullable)</text>
+  <text class="key" x="716" y="343">FK  CreatedByID / UpdatedByID</text>
 
   <rect class="box" x="355" y="425" width="270" height="103" rx="10"/>
   <path class="join" d="M365 425h250a10 10 0 0 1 10 10v30H355v-30a10 10 0 0 1 10-10z"/>
@@ -94,6 +94,6 @@
   <text class="caption" x="320" y="352">Creator preserved on soft delete; FK restricts account deletion</text>
   <path class="relation" d="M285 610H325V740H355"/>
   <text class="cardinality" x="293" y="602">1</text><text class="cardinality" x="337" y="731">N</text>
-  <text class="caption" x="32" y="697">Legacy task creators stay nullable.</text>
-  <text class="caption" x="32" y="719">Business records are preserved.</text>
+  <text class="caption" x="32" y="697">Both task audit fields are nullable.</text>
+  <text class="caption" x="32" y="719">Deleting an updater sets its FK to null.</text>
 </svg>

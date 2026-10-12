@@ -20,6 +20,7 @@ public partial class Task
     public int ProjectId { get; set; }
 
     public int? CreatedById { get; set; }
+    public int? UpdatedById { get; set; }
 
     public bool IsActive { get; set; }
 
@@ -30,6 +31,7 @@ public partial class Task
     public virtual Project Project { get; set; } = null!;
 
     public virtual SystemAccount? CreatedBy { get; set; }
+    public virtual SystemAccount? UpdatedBy { get; set; }
 
     public virtual ICollection<Tag> Tags { get; set; } = new List<Tag>();
 }

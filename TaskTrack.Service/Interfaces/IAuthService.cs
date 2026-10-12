@@ -8,4 +8,5 @@ public interface IAuthService
     Task<TokenResponseDto?> LoginAsync(LoginDto input);
     Task<TokenResponseDto?> RefreshAsync(string refreshToken);
     Task LogoutAsync(string refreshToken);
+    Task<bool> ChangePasswordAsync(int accountId, ChangePasswordDto input);
 }

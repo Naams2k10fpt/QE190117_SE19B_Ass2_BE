@@ -129,6 +129,7 @@ public class TaskRepository : ITaskRepository
         task.Priority = changes.Priority;
         task.DueDate = changes.DueDate;
         task.ProjectId = changes.ProjectId;
+        task.UpdatedById = changes.UpdatedById;
         task.ModifiedDate = DateTime.SpecifyKind(
             DateTime.UtcNow, DateTimeKind.Unspecified);
 
@@ -155,7 +156,7 @@ public class TaskRepository : ITaskRepository
         await _context.SaveChangesAsync();
         return true;
     }
-    public async Task<bool> SoftDeleteAsync(int id)
+    public async Task<bool> SoftDeleteAsync(int id, int updatedById)
     {
         var task = await _context.Tasks
             .FirstOrDefaultAsync(t => t.TaskId == id && t.IsActive);
@@ -164,6 +165,7 @@ public class TaskRepository : ITaskRepository
             return false;
 
         task.IsActive = false;
+        task.UpdatedById = updatedById;
         task.ModifiedDate = DateTime.SpecifyKind(
             DateTime.UtcNow, DateTimeKind.Unspecified);
 

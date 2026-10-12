@@ -89,6 +89,12 @@ public partial class TaskTrackDbContext : DbContext
             entity.Property(e => e.Status).HasDefaultValue((short)0);
             entity.Property(e => e.Title).HasMaxLength(300);
             entity.Property(e => e.CreatedById).HasColumnName("CreatedByID");
+            entity.Property(e => e.UpdatedById).HasColumnName("UpdatedByID");
+            entity.HasIndex(e => e.UpdatedById, "IX_Task_UpdatedByID");
+            entity.HasOne(e => e.UpdatedBy).WithMany()
+                .HasForeignKey(e => e.UpdatedById)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("FK_Task_UpdatedBy_SystemAccount");
 
             entity.HasIndex(e => e.CreatedById, "IX_Task_CreatedByID");
 

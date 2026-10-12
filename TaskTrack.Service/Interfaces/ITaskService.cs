@@ -13,6 +13,6 @@ public interface ITaskService
     Task<bool> ProjectExistsAsync(int projectId);
     Task<bool> TagsExistAsync(List<int> tagIds);
     Task<TaskDetailDto> CreateAsync(CreateTaskDto input, int createdById);
-    Task<bool> UpdateAsync(int id, UpdateTaskDto input);
-    Task<bool> SoftDeleteAsync(int id);
+    Task<bool> UpdateAsync(int id, UpdateTaskDto input, int updatedById);
+    Task<bool> SoftDeleteAsync(int id, int updatedById);
 }

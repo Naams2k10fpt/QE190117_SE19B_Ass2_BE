@@ -80,4 +80,30 @@ public class AuthController : ControllerBase
         var account = await _accounts.GetByIdAsync(id);
         return account is null ? Unauthorized() : Ok(account);
     }
+
+    [Authorize(Roles = "0,1")]
+    [HttpPut("profile")]
+    public async Task<ActionResult<AccountDto>> UpdateProfile([FromBody] UpdateProfileDto input)
+    {
+        if (!int.TryParse(User.FindFirst("AccountID")?.Value, out var id) || id <= 0)
+            return Unauthorized();
+        if (!await _accounts.UpdateAsync(id, new UpdateAccountDto { FullName = input.FullName }))
+            return Unauthorized();
+        var account = await _accounts.GetByIdAsync(id);
+        return account is null ? Unauthorized() : Ok(account);
+    }
+
+    [Authorize(Roles = "0,1")]
+    [HttpPut("password")]
+    public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordDto input)
+    {
+        if (!int.TryParse(User.FindFirst("AccountID")?.Value, out var id) || id <= 0)
+            return Unauthorized();
+        if (!await _service.ChangePasswordAsync(id, input))
+        {
+            ModelState.AddModelError(nameof(input.CurrentPassword), "Current password is incorrect or the account changed. Please try again.");
+            return ValidationProblem(ModelState);
+        }
+        return NoContent();
+    }
 }

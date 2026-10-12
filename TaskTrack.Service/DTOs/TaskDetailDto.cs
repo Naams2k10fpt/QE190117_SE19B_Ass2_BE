@@ -17,4 +17,6 @@ public sealed record TaskDetailDto(
     bool IsActive,
     DateTime CreatedDate,
     DateTime? ModifiedDate,
-    List<TaskTagDto> Tags);
+    List<TaskTagDto> Tags,
+    int? CreatedById,
+    int? UpdatedById);

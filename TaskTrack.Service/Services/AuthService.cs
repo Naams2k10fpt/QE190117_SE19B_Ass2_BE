@@ -76,16 +76,16 @@ public class AuthService : IAuthService
         var refreshToken = Convert.ToBase64String(
             RandomNumberGenerator.GetBytes(32));
 
-        await _refreshTokenRepository.AddAsync(new RefreshToken
+        var currentAccount = await _refreshTokenRepository.StartSessionAsync(new RefreshToken
         {
             AccountId = account.AccountId,
             SessionId = sessionId,
             TokenHash = HashRefreshToken(refreshToken),
             CreatedDate = now,
             ExpiresDate = refreshTokenExpiresAt
-        });
+        }, account.PasswordHash);
 
-        return CreateResponse(account, sessionId, refreshToken, refreshTokenExpiresAt);
+        return currentAccount is null ? null : CreateResponse(currentAccount, sessionId, refreshToken, refreshTokenExpiresAt);
     }
 
     private static string HashRefreshToken(string token) => Convert.ToHexString(
@@ -110,4 +110,14 @@ public class AuthService : IAuthService
 
     public Task LogoutAsync(string refreshToken) =>
         _refreshTokenRepository.RevokeSessionAsync(HashRefreshToken(refreshToken), DateTime.UtcNow);
+
+    public async Task<bool> ChangePasswordAsync(int accountId, ChangePasswordDto input)
+    {
+        var account = await _repository.GetByIdAsync(accountId);
+        if (account is null || _passwordHasher.VerifyHashedPassword(
+            account, account.PasswordHash, input.CurrentPassword) == PasswordVerificationResult.Failed)
+            return false;
+        var newHash = _passwordHasher.HashPassword(account, input.NewPassword);
+        return await _repository.ChangePasswordAsync(accountId, account.PasswordHash, newHash);
+    }
 }

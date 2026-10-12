@@ -56,7 +56,9 @@ public class TaskService : ITaskService
             task.IsActive,
             task.CreatedDate,
             task.ModifiedDate,
-            tags);
+            tags,
+            task.CreatedById,
+            task.UpdatedById);
     }
     public async Task<List<TaskListItemDto>> GetByProjectAsync(int projectId)
     {
@@ -128,7 +130,7 @@ public class TaskService : ITaskService
             ?? throw new InvalidOperationException(
                 "Created task could not be loaded.");
     }
-    public Task<bool> UpdateAsync(int id, UpdateTaskDto input)
+    public Task<bool> UpdateAsync(int id, UpdateTaskDto input, int updatedById)
     {
         var changes = new TaskTrack.Repo.Models.Task
         {
@@ -137,13 +139,14 @@ public class TaskService : ITaskService
             Status = input.Status!.Value,
             Priority = input.Priority!.Value,
             DueDate = input.DueDate,
-            ProjectId = input.ProjectId!.Value
+            ProjectId = input.ProjectId!.Value,
+            UpdatedById = updatedById
         };
 
         return _repository.UpdateAsync(id, changes, input.TagIds!);
     }
-    public Task<bool> SoftDeleteAsync(int id)
+    public Task<bool> SoftDeleteAsync(int id, int updatedById)
     {
-        return _repository.SoftDeleteAsync(id);
+        return _repository.SoftDeleteAsync(id, updatedById);
     }
 }

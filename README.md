@@ -11,7 +11,7 @@ Assignment 2 reuses the existing PostgreSQL database on Render. Back it up befor
 ## Run locally
 
 1. Use the existing PostgreSQL database and preserve its data. Back it up before applying Assignment 2 schema updates; do not rerun the initialization script.
-2. Apply `database/001_assignment2_schema.sql` once after backup. Set `ConnectionStrings__DefaultConnection` or `DATABASE_URL` and a `JWT_SECRET` of at least 32 UTF-8 bytes in your environment (or local ASP.NET Core user secrets). Keep real credentials out of Git.
+2. Apply `database/001_assignment2_schema.sql` and `database/003_task_update_audit.sql` after backup. Set `ConnectionStrings__DefaultConnection` or `DATABASE_URL` and a `JWT_SECRET` of at least 32 UTF-8 bytes in your environment (or local ASP.NET Core user secrets). Keep real credentials out of Git.
 3. Set `FRONTEND_URL` to the allowed frontend origin, without a trailing slash. It defaults to `http://localhost:3000` for local development.
 4. From the repository root, run `dotnet restore` and `dotnet run --project TaskTrack.API --launch-profile http`.
 
@@ -30,10 +30,14 @@ Free services can take time to wake after inactivity. The reused free PostgreSQL
 - All business GET endpoints and search remain public. POST, PUT and DELETE require Staff (role 0) or Admin (role 1).
 - Department/project deletion is rejected when child records exist; tag deletion is rejected while any task uses the tag.
 - Task DELETE sets `IsActive` to false and preserves `CreatedByID`. Task creation takes its creator from the authenticated JWT, ignoring client input.
+- Task PUT and DELETE record `UpdatedByID` from the authenticated account. Detail responses expose both audit IDs; legacy values remain null. Deleting a non-creator updater clears its audit link, while the creator restriction remains enforced.
 - Register creates only Staff and hashes passwords with PBKDF2. Login issues 15-minute access tokens and stores only hashes of 7-day refresh tokens.
 - `POST /api/auth/refresh` atomically rotates a refresh token; replay revokes its entire session. Rotation retains the original 7-day deadline. `POST /api/auth/logout` revokes that session and is idempotent. Both accept `{ "refreshToken": "..." }` so logout also works when an access token has expired.
 - `GET /api/auth/me` returns the current account. All `/api/accounts` endpoints require Admin. Account deletion returns 409 if the account created any task, including a soft-deleted task.
 - Role changes revoke the account's sessions. JWT authentication checks the live account, current role and active session, so deleted accounts and revoked privileges cannot keep using old tokens.
+- `PUT /api/auth/profile` updates only the caller's full name. `PUT /api/auth/password` verifies the current password, stores a new PBKDF2 hash and atomically revokes all sessions. A concurrent login verified against the old hash cannot start a session after the change; concurrent password changes have one winner.
 - CORS allows the origin configured by `FRONTEND_URL`, or the local frontend by default.
 
 See [tests/README.md](tests/README.md) for HTTP/database regression checks. GitHub Actions builds the API and regression runner on every push; live integration checks run separately with a configured database.
+
+The pre-bonus backup was restored into an isolated PostgreSQL 18 database, compared with live business/account data, and used to verify the audit migration twice before production application. Backup files and credentials remain outside Git.

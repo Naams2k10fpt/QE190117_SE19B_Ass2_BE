@@ -57,6 +57,23 @@ public class AccountRepository : IAccountRepository
 
     public Task<bool> HasCreatedTasksAsync(int id) => _context.Tasks.AnyAsync(t => t.CreatedById == id);
 
+    public async Task<bool> ChangePasswordAsync(int id, string expectedHash, string newHash)
+    {
+        await using var transaction = await _context.Database.BeginTransactionAsync();
+        var account = await _context.SystemAccounts.FromSqlInterpolated(
+            $"SELECT * FROM public.\"SystemAccount\" WHERE \"AccountID\" = {id} FOR UPDATE")
+            .SingleOrDefaultAsync();
+        if (account is null || account.PasswordHash != expectedHash)
+            return false;
+        account.PasswordHash = newHash;
+        var now = DateTime.UtcNow;
+        await _context.RefreshTokens.Where(t => t.AccountId == id && t.RevokedDate == null)
+            .ExecuteUpdateAsync(s => s.SetProperty(t => t.RevokedDate, (DateTime?)now));
+        await _context.SaveChangesAsync();
+        await transaction.CommitAsync();
+        return true;
+    }
+
     public async Task<bool> DeleteAsync(int id)
     {
         var account = await _context.SystemAccounts.FindAsync(id);

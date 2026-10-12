@@ -78,9 +78,18 @@ public class RefreshTokenRepository : IRefreshTokenRepository
         await transaction.CommitAsync();
     }
 
-    public async Task AddAsync(RefreshToken token)
+    public async Task<TaskTrack.Repo.Models.SystemAccount?> StartSessionAsync(RefreshToken token, string expectedPasswordHash)
     {
+        await using var transaction = await _context.Database.BeginTransactionAsync();
+        var account = await _context.SystemAccounts.FromSqlInterpolated(
+            $"SELECT * FROM public.\"SystemAccount\" WHERE \"AccountID\" = {token.AccountId} FOR UPDATE")
+            .SingleOrDefaultAsync();
+        // A login verified before a password change cannot create a session afterwards.
+        if (account is null || account.PasswordHash != expectedPasswordHash)
+            return null;
         _context.RefreshTokens.Add(token);
         await _context.SaveChangesAsync();
+        await transaction.CommitAsync();
+        return account;
     }
 }
