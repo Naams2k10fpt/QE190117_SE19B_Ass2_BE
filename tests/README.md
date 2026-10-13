@@ -18,3 +18,7 @@ Bonus checks cover profile validation and account/role spoofing, password valida
 
 Run `node tests/health-checks.mjs` with `TEST_API_URL` set to the API origin. It checks public access, the readiness body, timestamp, `no-store`, and absence of diagnostic fields. The default expected response is 200. To verify the failure branch, start an isolated API instance with an unreachable test database, set `TEST_HEALTH_STATUS=503`, and run the same check. Do not modify production database configuration to induce failure.
 
+# Deletion history and undo checks
+
+After applying `database/004_deletion_history.sql`, run `node tests/deletion-checks.mjs` with `TEST_API_URL`, `DATABASE_URL` and optionally `TEST_PSQL_PATH` configured privately. This suite checks all five resources, original IDs and task links, Staff/Admin permissions, private snapshots, exact 24-hour expiry, parent/name/email conflicts, account session revocation and concurrent restoration. A controlled row-lock test crosses the deadline to verify a queued request cannot restore late. Time changes and cleanup affect only uniquely prefixed fixtures; all seven original tables must match their initial fingerprints. Run sequentially with other database suites and while other users are not editing. For an isolated loopback PostgreSQL clone only, `TEST_DB_SSLMODE=disable` permits testing without TLS.
+

@@ -3,6 +3,8 @@ using TaskTrack.Service.DTOs;
 using TaskTrack.Service.Interfaces;
 using TaskTrack.Service.Results;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace TaskTrack.API.Controllers;
 
@@ -36,8 +38,15 @@ public class TagsController : ControllerBase
             return ValidationProblem(ModelState);
         }
 
-        var created = await _service.CreateAsync(input);
-        return StatusCode(201, created);
+        try
+        {
+            var created = await _service.CreateAsync(input);
+            return StatusCode(201, created);
+        }
+        catch (DbUpdateException e) when (e.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+        {
+            return BadRequest(new { message = "Tag name already exists." });
+        }
     }
 
     [Authorize(Roles = "0,1")]
@@ -52,7 +61,12 @@ public class TagsController : ControllerBase
             return ValidationProblem(ModelState);
         }
 
-        var updated = await _service.UpdateAsync(id, input);
+        bool updated;
+        try { updated = await _service.UpdateAsync(id, input); }
+        catch (DbUpdateException e) when (e.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+        {
+            return BadRequest(new { message = "Tag name already exists." });
+        }
 
         if (!updated)
             return NotFound();

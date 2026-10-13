@@ -11,7 +11,7 @@ Assignment 2 reuses the existing PostgreSQL database on Render. Back it up befor
 ## Run locally
 
 1. Use the existing PostgreSQL database and preserve its data. Back it up before applying Assignment 2 schema updates; do not rerun the initialization script.
-2. Apply `database/001_assignment2_schema.sql` and `database/003_task_update_audit.sql` after backup. Set `ConnectionStrings__DefaultConnection` or `DATABASE_URL` and a `JWT_SECRET` of at least 32 UTF-8 bytes in your environment (or local ASP.NET Core user secrets). Keep real credentials out of Git.
+2. Apply `database/001_assignment2_schema.sql`, `database/003_task_update_audit.sql` and `database/004_deletion_history.sql` after backup. Set `ConnectionStrings__DefaultConnection` or `DATABASE_URL` and a `JWT_SECRET` of at least 32 UTF-8 bytes in your environment (or local ASP.NET Core user secrets). Keep real credentials out of Git.
 3. Set `FRONTEND_URL` to the allowed frontend origin, without a trailing slash. It defaults to `http://localhost:3000` for local development.
 4. From the repository root, run `dotnet restore` and `dotnet run --project TaskTrack.API --launch-profile http`.
 
@@ -31,6 +31,8 @@ Free services can take time to wake after inactivity. The reused free PostgreSQL
 - All business GET endpoints and search remain public. POST, PUT and DELETE require Staff (role 0) or Admin (role 1).
 - Department/project deletion is rejected when child records exist; tag deletion is rejected while any task uses the tag.
 - Task DELETE sets `IsActive` to false and preserves `CreatedByID`. Task creation takes its creator from the authenticated JWT, ignoring client input.
+- Successful deletions of departments, projects, tasks, tags and eligible accounts atomically create deletion history. `GET /api/deletions` supports resource, state, name search and pagination; `POST /api/deletions/{id}/restore` restores the original ID within exactly 24 hours. Staff can view/restore the four business groups; only Admin can view/restore accounts. History starts at feature activation. Expired and restored metadata stay visible; existing linked-record restrictions remain in force.
+- Restore rejects expired or already restored entries, missing/inactive parents and duplicate names/emails with 409. Restore parents first. Database row locks allow only one concurrent winner, and the deadline is rechecked after lock waits. Private snapshots are never returned by the API and are cleared after successful restoration. Account restoration preserves the previous password and role but cannot revive revoked sessions; fresh login is required. Deleted account IDs remain in history as audit references.
 - Task PUT and DELETE record `UpdatedByID` from the authenticated account. Detail responses expose both audit IDs; legacy values remain null. Deleting a non-creator updater clears its audit link, while the creator restriction remains enforced.
 - Register creates only Staff and hashes passwords with PBKDF2. Login issues 15-minute access tokens and stores only hashes of 7-day refresh tokens.
 - `POST /api/auth/refresh` atomically rotates a refresh token; replay revokes its entire session. Rotation retains the original 7-day deadline. `POST /api/auth/logout` revokes that session and is idempotent. Both accept `{ "refreshToken": "..." }` so logout also works when an access token has expired.

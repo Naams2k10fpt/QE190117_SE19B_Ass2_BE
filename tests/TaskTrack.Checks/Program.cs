@@ -350,6 +350,7 @@ finally
         DELETE FROM public."Project" WHERE "ProjectName" LIKE @prefix;
         DELETE FROM public."Department" WHERE "DepartmentName" LIKE @prefix;
         DELETE FROM public."SystemAccount" WHERE "Email" LIKE @prefix;
+        DELETE FROM public."DeletionHistory" WHERE "EntityName" ILIKE @prefix;
         """, ("prefix", prefix + "%"));
     Check(await Fingerprint() == baseline, "Business data must match the original snapshot after fixture cleanup.");
 }
