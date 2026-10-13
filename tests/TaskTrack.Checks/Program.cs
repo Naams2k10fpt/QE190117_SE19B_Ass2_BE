@@ -77,6 +77,9 @@ async Task<string> Fingerprint()
 
 try
 {
+    var health = await Send("GET", "/api/health", 200);
+    Check(Text(health, "status") == "healthy" && Text(health, "database") == "reachable",
+        "Public health must confirm database readiness without credentials.");
     foreach (var resource in new[] { "departments", "projects", "tasks", "tags" })
     {
         await Send("GET", $"/api/{resource}", 200);

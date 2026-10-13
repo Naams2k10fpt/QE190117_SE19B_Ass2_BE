@@ -14,3 +14,7 @@ The runner registers temporary Staff accounts and directly inserts a temporary A
 API deletion remains soft-delete for tasks. The regression runner physically removes its own temporary task rows only during cleanup, so its temporary accounts and projects can also be removed. It never removes legacy tasks.
 
 Bonus checks cover profile validation and account/role spoofing, password validation, PBKDF2 replacement, revocation of every session, simultaneous password changes and a login verified before a password change. Audit checks verify creator/updater IDs, ignored client spoofing, soft-delete tracking and deletion of a non-creator updater without losing the task.
+# Health readiness checks
+
+Run `node tests/health-checks.mjs` with `TEST_API_URL` set to the API origin. It checks public access, the readiness body, timestamp, `no-store`, and absence of diagnostic fields. The default expected response is 200. To verify the failure branch, start an isolated API instance with an unreachable test database, set `TEST_HEALTH_STATUS=503`, and run the same check. Do not modify production database configuration to induce failure.
+

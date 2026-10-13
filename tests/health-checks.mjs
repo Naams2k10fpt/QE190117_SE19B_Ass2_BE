@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+const api=process.env.TEST_API_URL||'http://localhost:5117';
+const expected=Number(process.env.TEST_HEALTH_STATUS||200);
+assert.ok([200,503].includes(expected));
+const started=Date.now();
+const response=await fetch(api+'/api/health',{signal:AbortSignal.timeout(10000)});
+assert.equal(response.status,expected);
+assert.match(response.headers.get('cache-control'),/no-store/);
+const result=await response.json();
+assert.deepEqual(Object.keys(result).sort(),['checkedAt','database','status']);
+assert.equal(result.status,expected===200?'healthy':'unhealthy');
+assert.equal(result.database,expected===200?'reachable':'unavailable');
+assert.ok(Number.isFinite(Date.parse(result.checkedAt)));
+assert.ok(Date.now()-started<8000,'Health must fail promptly when database is unavailable.');
+console.log(`PASS: anonymous health ${expected}, bounded database probe, timestamp, no cache and no diagnostic/credential leakage.`);

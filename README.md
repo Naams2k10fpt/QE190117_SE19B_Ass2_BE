@@ -27,6 +27,7 @@ Free services can take time to wake after inactivity. The reused free PostgreSQL
 
 ## API behavior
 
+- `GET /api/health` is public and uncached. It probes the database with a three-second cancellation budget, returning 200 with `status: healthy`, `database: reachable` and a UTC `checkedAt`, or 503 with generic unhealthy/unavailable fields. It never returns connection strings or exception details. Call [production health](https://qe190117-se19b-ass2-be.onrender.com/api/health) before a demo; the first call may wake the free service. This does not extend the database expiry or guarantee continuous availability.
 - All business GET endpoints and search remain public. POST, PUT and DELETE require Staff (role 0) or Admin (role 1).
 - Department/project deletion is rejected when child records exist; tag deletion is rejected while any task uses the tag.
 - Task DELETE sets `IsActive` to false and preserves `CreatedByID`. Task creation takes its creator from the authenticated JWT, ignoring client input.
